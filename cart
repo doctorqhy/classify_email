@@ -1,0 +1,182 @@
+from numpy import *
+
+
+def loadDataSet(filename):
+
+    dataMat = []
+
+    fr = open(filename)
+    for line in fr.readlines():
+
+        fitLine = []
+        curLine = line.strip().split('\t')
+
+        for i in range(len(curLine)):
+            fitLine.append(float(curLine[i]))
+
+        dataMat.append(fitLine)
+    return dataMat
+
+
+def binSplitDataSet(dataSet,feature,value):
+
+    #划分集合，nonzero返回符合条件的行号和列号，用0索引取得行号，得到一个数据集
+    mat0 = dataSet[nonzero(dataSet[:,feature] > value)[0],:]
+    mat1 = dataSet[nonzero(dataSet[:,feature] <= value)[0],:]
+    return mat0,mat1
+
+def toList(dataset,feat):
+    myMat = []
+    myData = dataset[:,feat].tolist()
+    #data为一个集合，要得到集合中的数字，则使用data[0]
+    for data in myData:
+        myMat.append(data[0])
+    return myMat
+
+
+def regLeaf(dataSet):
+
+    #取平均值做叶子结点
+    return mean(dataSet[:,-1])
+
+
+def regErr(dataSet):
+
+    #均方差乘以个数等于总方差
+    return var(dataSet[:,-1]) * shape(dataSet)[0]
+
+
+
+def choosesBestSplit(dataSet,leafType=regLeaf,errType=regErr,ops=(1,4)):
+
+    #允许的误差下降值
+    toLs = ops[0]
+    #切分的最少样本数
+    toLn = ops[1]
+    datas = []
+    for data in dataSet[:,-1].tolist():
+        datas.append(data[0])
+
+    if len(set(datas)) == 1:
+        return None,leafType(dataSet)
+    del(datas)
+    m,n = shape(dataSet)
+    #原数据集总方差
+    S = errType(dataSet)
+    bestS = inf
+    bestIndex = 0
+    bestValue = 0
+
+    #遍历数据的所有特征值
+    for featIndex in range(n - 1):
+
+        myMat = toList(dataSet,featIndex)
+
+        # 得到每个特征下可能的取值
+        for splitVal in set(myMat):
+
+            #进行划分
+            mat0,mat1 = binSplitDataSet(dataSet,featIndex,splitVal)
+
+            if (shape(mat0)[0] < toLn or shape(mat1)[0] < toLn):
+
+                continue
+
+            newS = errType(mat0) + errType(mat1)
+
+            #得到更小的误差则更新
+            if newS < bestS:
+
+                bestIndex = featIndex
+                bestValue = splitVal
+                bestS = newS
+
+    #如果划分集合后方差差距不大，则直接创建叶子节点
+    if (S - bestS) < toLs:
+
+        return None,leafType(dataSet)
+
+    #用得到的最好的特征和特征值进行划分
+    mat0,mat1 = binSplitDataSet(dataSet,bestIndex,bestValue)
+
+    #如果划分的子集大小小于用户定义的参数toLn，则直接创建叶子节点
+    if (shape(mat0)[0] < toLn or shape(mat1)[0] < toLn):
+
+        return None,leafType(dataSet)
+
+    return bestIndex,bestValue
+
+
+def createTree(dataSet,leafType=regLeaf,errType=regErr,ops=(1,4)):
+
+    feat,val = choosesBestSplit(dataSet,leafType,errType,ops=(1,4))
+    if feat == None:
+        return val
+    retTree = {}
+    retTree['spInd'] = feat
+    retTree['spVal'] = val
+    lSet,rSet = binSplitDataSet(dataSet,feat,val)
+    retTree['left'] = createTree(lSet,leafType,errType,ops)
+    retTree['right'] = createTree(rSet,leafType,errType,ops)
+
+    return retTree
+
+
+
+
+def isTree(obj):
+
+    return (type(obj).__name__ == 'dict')
+
+
+def getMean(tree):
+
+    if isTree(tree['left']):
+
+        tree['left'] = getMean(tree['left'])
+
+    if isTree(tree['right']):
+
+        tree['right'] = getMean(tree['right'])
+
+    return (tree['right'] + tree['left']) / 2.0
+
+
+def prune(tree,testData):
+
+    if (shape(testData)[0]) == 0:
+
+        return getMean(tree)
+
+    if (isTree(tree['left'])) or isTree(tree['right']):
+
+        lSet,rSet = binSplitDataSet(testData,tree['spInd'],tree['spVal'])
+
+    if isTree(tree['left']):
+
+        tree['left'] = prune(tree['left'], lSet)
+
+    if isTree(tree['right']):
+
+        tree['right'] = prune(tree['right'], rSet)
+
+    if not isTree(tree['left']) and not isTree(tree['right']):
+
+        lSet,rSet = binSplitDataSet(testData,tree['spInd'],tree['spVal'])
+
+        errorNoMerge = sum(power(lSet[:,-1] - tree['left'],2)) + \
+            sum(power(rSet[:,-1] - tree['right'],2))
+
+        treeMean = (tree['left'] + tree['right']) / 2.0
+        errorMerge = sum(power(testData[:,-1] - treeMean,2))
+
+        if errorMerge < errorNoMerge:
+
+            print("merging")
+            return treeMean
+        else:
+
+            return tree
+    else:
+
+        return tree
