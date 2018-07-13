@@ -1,0 +1,288 @@
+from SVM.SMO import *
+
+
+#定义一个数据结构来存储数据
+class optStruct():
+
+    def __init__(self,dataMatIn,classLabels,C,toler,kTup):
+
+        self.X = dataMatIn
+        self.labelMat = classLabels
+        #常数
+        self.C = C
+        #容错率
+        self.tol = toler
+        self.m = shape(dataMatIn)[0]
+        self.alpha = mat(zeros((self.m,1)))
+        self.b = 0
+        #缓冲矩阵
+        self.eCache = mat(zeros((self.m,2)))
+        self.K = mat((zeros((self.m,self.m))))
+        for i in range(self.m):
+
+            #每一列保存所有数据与第i个数据进行核函数的结果，i行j列代表第i个数据与第j个数据经过核函数得到的结果
+            self.K[:,i] = kernelTrans(self.X,self.X[i,:],kTup)
+
+
+#得到错误率
+def calcEk(oS,k):
+
+    fxk = float(multiply(oS.alpha,oS.labelMat).T*oS.K[:,k] + oS.b)
+    Ek = fxk - float(oS.labelMat[k])
+
+    return Ek
+
+
+#得到j和j的错误率Ej
+def selectJ(i,oS,Ei):
+
+    maxK = -1;maxDeltaE = 0;Ej = 0
+    oS.eCache[i] = [1,Ei]
+    validEcacheList = nonzero(oS.eCache[:,0].A)[0]
+
+    #如果存在两个或两个以上alpha更新
+    if len(validEcacheList) > 1 :
+
+        #找出使得步长最长的k的值并求得Ek
+        for k in validEcacheList:
+
+            if k == i:
+
+                continue
+
+            Ek = calcEk(oS,k)
+            deltaE = abs(Ei - Ek)
+
+            if deltaE > maxDeltaE:
+
+                maxK = k
+                maxDeltaE = deltaE
+                Ej = Ek
+
+        return maxK,Ej
+
+    #否则随机选取j，并求得Ej
+    else:
+
+        j = selectJrand(i,oS.m)
+        Ej = calcEk(oS,j)
+
+    return j,Ej
+
+
+#更新缓冲区
+def updateEk(oS,k):
+
+    Ek = calcEk(oS,k)
+    oS.eCache[k] = [1,Ek]
+
+
+#内循环代码
+def innerL(i,oS):
+
+    #步骤1：求出Ei
+    Ei = calcEk(oS,i)
+
+    #alpha需要改变时的alpha取值范围
+    if ((oS.labelMat[i]*Ei < -oS.tol) and (oS.alpha[i] < oS.C)) or ((oS.labelMat[i]*Ei > oS.tol) and (oS.alpha[i] > 0)):
+
+        j,Ej = selectJ(i,oS,Ei)
+        alphaIold = oS.alpha[i].copy()
+        alphaJold = oS.alpha[j].copy()
+
+        #步骤2：更新alpha的边界
+        if (oS.labelMat[i] != oS.labelMat[j]):
+
+            L = max(0,oS.alpha[j]-oS.alpha[i])
+            H = min(oS.C,oS.C+oS.alpha[j]-oS.alpha[i])
+
+        else:
+
+            L = max(0,oS.alpha[i]+oS.alpha[j]-oS.C)
+            H = min(oS.C,oS.alpha[i]+oS.alpha[j])
+
+        if L == H:
+
+            print("L==H")
+            return 0
+
+       #步骤3：求eta的值
+        eta = 2.0*oS.K[i,j] - oS.K[i,i] - oS.K[j,j]
+
+        if eta >= 0:
+
+            print("eta>=0")
+            return 0
+
+        #步骤4：更新alpha[j]的值
+        oS.alpha[j] -= oS.labelMat[j]*(Ei-Ej)/eta
+        #步骤5：选择分隔值
+        oS.alpha[j] = clipAlpha(oS.alpha[j],H,L)
+        updateEk(oS,j)
+
+        if (abs(oS.alpha[j]-alphaJold) < 0.0001):
+
+            print("j not moving enough")
+            return 0
+
+        #步骤6：更新alpha[i]的值
+        oS.alpha[i] += oS.labelMat[i]*oS.labelMat[j]*(alphaJold-oS.alpha[j])
+        updateEk(oS,i)
+
+        #步骤7：更新b1、b2的值
+        b1 = oS.b - Ei - oS.labelMat[i]*(oS.alpha[i]-alphaIold)*oS.K[i,i] - oS.labelMat[j,:]*(oS.alpha[j]-alphaJold)*oS.K[i,j]
+        b2 = oS.b - Ej - oS.labelMat[i]*(oS.alpha[i]-alphaIold)*oS.K[i,j] - oS.labelMat[j,:]*(oS.alpha[j]-alphaJold)*oS.K[j,j]
+
+        #步骤8：更新b的值
+        if (oS.alpha[i] > 0) and (oS.alpha[i] < oS.C):
+
+            oS.b = b1
+
+        elif (oS.alpha[j] > 0) and (oS.alpha[j] < oS.C):
+
+            oS.b = b2
+
+        else:
+
+            oS.b = (b1+b2)/2
+
+        #alpha值完成更新后返回1
+        return 1
+
+    #否则返回0
+    else:
+
+        return 0
+
+
+#外循环代码
+def smoP(dataMatIn,classLabel,C,toler,maxIter,kTup=('Lin',0)):
+
+    oS = optStruct(mat(dataMatIn),mat(classLabel).transpose(),C,toler)
+    iter = 0
+    entireSet = True
+    alphaPairsChanged = 0
+
+    #超过最大迭代次数或者未对任意alpha进行修改时，退出循环
+    while (iter < maxIter) and ((alphaPairsChanged > 0) or (entireSet)):
+
+        #记录alpha值的更新次数
+        alphaPairsChanged = 0
+
+        if entireSet:
+
+            for i in range(oS.m):
+
+                #alpha值更新后，对alphaPairsChanged进行修改
+                alphaPairsChanged += innerL(i,oS)
+                print("fullSet,iter:%d i:%d,pairs changed %d"%(iter,i,alphaPairsChanged))
+
+            iter += 1
+
+        else:
+
+            #得到非边界值的索引
+            nonBoundIs = nonzero((oS.alpha.A > 0)*(oS.alpha.A<C))[0]
+
+            #遍历范围内的取值
+            for i in nonBoundIs:
+
+                alphaPairsChanged += innerL(i,oS)
+                print("non-bound,iter:%d i:%d,pairs changde %d"%(iter,i,alphaPairsChanged))
+
+            iter += 1
+
+        if entireSet:
+
+            entireSet = False
+
+        elif (alphaPairsChanged == 0):
+
+            entireSet = True
+
+        #输出迭代次数
+        print("iteration number:%d"%iter)
+
+    return oS.b,oS.alpha
+
+
+#得到w的值
+def calcWs(alpha,dataArr,classLabel):
+    X = mat(dataArr)
+    labelMat = mat(classLabel).transpose()
+    m,n = shape(X)
+    w = zeros((n,1))
+
+    for i in range(m):
+
+        #根据公式计算w的值
+        w += multiply(alpha[i]*labelMat[i],X[i,:].T)
+
+    return w
+
+
+#对数据进行分类
+def classfiy(dataArr,i,ws,b):
+
+    dataMat = mat(dataArr)
+    cla = dataMat[i]*mat(ws) + b
+    if cla > 0:
+
+        return 1
+
+    else:
+
+        return -1
+
+
+def kernelTrans(X,A,kTup):
+
+    m,n = shape(X)
+    K = mat(zeros((m,1)))
+    if kTup[0] == 'lin':
+        K = X * A.T
+
+    elif kTup[0] == 'rbf':
+
+        for j in range(m):
+
+            deltaRow = X[j,:] - A
+            #将内积换成核函数的形式
+            K[j] = deltaRow * deltaRow.T
+        K = exp(K/(-1*kTup[1]**2))
+    else:raise NameError('Houston We Have a Problem --That Kernel is not recognized')
+
+    return K
+
+
+def restRbf(k1 = 1.3):
+    filename = r"C:\Users\Qhy\Desktop\testSet.txt"
+    dataMat, labelMat = loadDataSet(filename)
+    b,alpha = smoP(dataMat,labelMat,200,0.0001,10000,('rbf',k1))
+    svInd = nonzero(alpha.A>0)[0]
+    svs = dataMat[svInd]
+    labelSv = labelMat[svInd]
+    print("there are %d Support Vectors"%shape(svs)[0])
+    m,n = shape(dataMat)
+    errorCount = 0
+    for i in range(m):
+
+        kernelEval = kernelTrans(svs,dataMat[i,:])
+        #得出当前数据的类别
+        predict = kernelEval * multiply(labelSv,alpha[svInd]) + b
+        if sign(predict) != sign(labelMat[i]):
+            errorCount += 1
+    print("the training error rate is:%f"%float(errorCount/m))
+
+
+def main():
+    filename = r"C:\Users\Qhy\Desktop\testSet.txt"
+    dataMat,labelMat = loadDataSet(filename)
+    b,alpha = smoP(dataMat,labelMat,0.6,0.001,40)
+    ws = calcWs(alpha,dataMat,labelMat)
+    cla = classfiy(dataMat,1,ws,b)
+    print(cla)
+
+
+if __name__ == '__main__':
+    main()
