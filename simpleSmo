@@ -1,0 +1,136 @@
+import random
+from numpy import *
+
+
+#加载数据
+def loadDataSet(filename):
+
+    dataMat = []
+    labelMat = []
+
+    fr = open(filename)
+    for line in fr.readlines():
+
+        lineArr = line.strip().split('\t')
+        dataMat.append([float(lineArr[0]),float(lineArr[1])])
+        labelMat.append(float(lineArr[2]))
+
+    return dataMat,labelMat
+
+
+#随机选择一个数
+def selectJrand(i,m):
+
+    j = 1
+    while (j == i):
+
+        j = int(random.uniform(0,m))
+
+    return j
+
+
+#得到切分点的值
+def clipAlpha(aj,H,L):
+
+    if aj > H:
+
+        aj = H
+
+    if aj < L:
+
+        aj = L
+
+    return aj
+
+
+def smoSimple(dataMatIn,dataLables,C,Toler,maxIter):
+
+    dataMatrix = mat(dataMatIn)
+    labelMat = mat(dataLables).transpose()
+    #截距b初值为0
+    b = 0
+    m,n = shape(dataMatrix)
+    #多少个数据对应多少个alpha值
+    alpha = mat(zeros((m,1)))
+    iter = 0
+
+    while (iter < maxIter):
+
+        alphaPairsChanged = 0
+
+        for i in range(m):
+            #步骤1：求误差Ei=fxi-yi
+            fxi = float(multiply(alpha,labelMat).T * (dataMatrix * dataMatrix[i,:].T)) + b
+            Ei = fxi - float(labelMat[i])
+
+            #判断当alpha不满足条件时更新
+            if ((labelMat[i]*Ei < -Toler) and (alpha[i] < C)) or ((labelMat[i]*Ei > Toler) and (alpha[i] >0)):
+
+                #随机选取一点
+                j = selectJrand(i,m)
+                fxj = float(multiply(alpha,labelMat).T*(dataMatrix*dataMatrix[j,:].T)) + b
+                Ej = fxj - float(labelMat[j])
+                alphaIold = alpha[i].copy()
+                alphaJold = alpha[j].copy()
+
+                #步骤2：求上下边界，当yi=yj或yi！=yj
+                if (labelMat[i] != labelMat[j]):
+
+                    L = max(0,alpha[j]-alpha[i])
+                    H = min(C,C+alpha[j]-alpha[i])
+                else:
+                    L = max(0,alpha[i]+alpha[j]-C)
+                    H = min(C,alpha[i]+alpha[j])
+
+                if L == H:
+
+                    continue
+
+                #步骤3：求eta的值
+                eta = 2.0*dataMatrix[i,:]*dataMatrix[j,:].T - dataMatrix[i,:]*dataMatrix[i,:].T - dataMatrix[j,:]*dataMatrix[j,:].T
+
+                if eta >= 0:
+                    continue
+
+                #步骤4：求alphaj_new的值
+                alpha[j] -= labelMat[j]*(Ei-Ej)/eta
+                #步骤5：求分割值
+                alpha[j] = clipAlpha(alpha[j],H,L)
+
+                if (abs(alpha[j] - alphaJold) < 0.00001):
+                    continue
+
+                #步骤6：求alphai的值
+                alpha[i] += labelMat[i]*labelMat[j]*(alphaJold-alpha[j])
+                #步骤7：求b1、b2的值
+                b1 = b - Ej - labelMat[i]*(alpha[i]-alphaIold)*dataMatrix[i,:]*dataMatrix[i,:].T - labelMat[j]*(alpha[j]-alphaJold)*dataMatrix[i,:]*dataMatrix[j,:].T
+                b2 = b - Ej - labelMat[i]*(alpha[i]-alphaIold)*dataMatrix[i,:]*dataMatrix[j,:].T - labelMat[j]*(alpha[j]-alphaJold)*dataMatrix[j,:]*dataMatrix[j,:].T
+
+                #步骤8：求b的值
+                if (alpha[i]>0) and (alpha[i]<C):
+
+                    b = b1
+
+                elif(alpha[j]>0) and (alpha[j]<C):
+
+                    b = b2
+
+                else:
+
+                    b = (b1 + b2)/2
+
+                #统计优化次数
+                alphaPairsChanged += 1
+                print('iter:%d,i:%d,pairs:%d'%(iter,i,alphaPairsChanged))
+
+        #更新迭代次数
+        if (alphaPairsChanged == 0):
+
+            iter += 1
+
+        else:
+
+            iter = 0
+
+        print('iteration number:%d'%iter)
+    return b,alpha
