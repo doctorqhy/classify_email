@@ -1,0 +1,59 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+
+def getRealClassifier(x):
+
+    if x == 0:
+        return np.array([1,0,0])
+    elif x == 1:
+        return np.array([0,1,0])
+    else:
+        return np.array([0,0,1])
+
+
+def softMax(x,y,alpha):
+
+    theta = np.zeros((3,5))
+
+    for i in range(10000):
+
+        k = np.random.randint(0,105)
+        x_ = x[k].reshape(5,1)
+        theta_T_x = np.dot(theta,x_)
+        e_theta_T_x = np.exp(theta_T_x)
+        denominator = e_theta_T_x.sum()
+        numerator = e_theta_T_x
+        #得分函数
+        fraction = numerator / denominator
+        #得到真实类别
+        y_vector = np.mat(getRealClassifier(y[k])).T
+        #得到梯度
+        gradient = (fraction - y_vector) * x[k]
+        #使用随机梯度下降法迭代得到theta的值
+        theta -= alpha*gradient
+
+    return theta
+
+
+if __name__ == '__main__':
+    data = pd.read_csv(r"C:\Users\Qhy\Desktop\1.csv", header=None)
+    data[4] = pd.Categorical(data[4]).codes
+    # 第一列插入元素
+    data.insert(0, "常数项", 1)
+    x = data.iloc[:, 0:5].as_matrix()
+    y = data[4].as_matrix()
+    #划分训练集和测试集
+    x, x_test, y, y_test = train_test_split(x, y, test_size=0.3)
+    theta = softMax(x,y,0.01)
+    #得到预测值
+    predict = np.dot(theta,x_test.T)
+    #找出概率最大的索引即为预测的类别
+    predict_sort = predict.argmax(axis=0)
+    num_of_wrong = 0
+    for i in range(45):
+        if predict_sort[i] != y_test[i]:
+            num_of_wrong +=1
+    print("预测错误个数为:",num_of_wrong)
+    print("预测正确率为:{0}%".format((45-num_of_wrong)/45*100))
