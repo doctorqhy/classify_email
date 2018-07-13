@@ -1,0 +1,187 @@
+import numpy
+import matplotlib.pyplot as plt
+import random
+
+#加载文本中的数据
+def loadDataSet():
+    dataMat = []
+    labelMat = []
+    fr = open(r'C:\Users\Qhy\Desktop\testSet.txt')
+    for line in fr.readlines():
+        lineArr = line.strip().split()
+        dataMat.append([1.0,float(lineArr[0]),float(lineArr[1])])
+        labelMat.append(lineArr[2])
+    return dataMat,labelMat
+
+
+def sigmoid(inX):
+
+    return 1.0 / (1 + numpy.exp(-inX))
+
+
+#梯度上升算法
+#通过批量训练数据更新回归系数
+def gradAscent(dataMatIn,classLabels):
+
+    #将数据列表转化为100x3矩阵
+    dataMatrix = numpy.mat(dataMatIn)
+    #将类别列表转化为100x1矩阵
+    labelMat = numpy.mat(classLabels).transpose().astype('float64')
+    m,n = numpy.shape(dataMatrix)
+    #向目标移动步长
+    alpha = 0.001
+    #迭代次数
+    maxCycles = 500
+    #初始化回归系数
+    weights = numpy.ones((n,1))
+
+    #通过迭代更新权重系数
+    for k in range(maxCycles):
+
+        #得到每组数据的真实类别
+        #两个矩阵相乘后每一行即为x0*w0+x1*w1+x2*w2的值也就是sigmoid的输入值
+        h = sigmoid(dataMatrix * weights)
+        #得到真实类别与预测类别的差值，再照该差值调整回归系数
+        error = (labelMat - h)
+        #w=w+aX转置e 用梯度上升法得到回归系数
+        weights = weights + alpha * dataMatrix.transpose() * error
+
+    return weights
+
+dataset,label = loadDataSet()
+a = gradAscent(dataset,label)
+
+
+def plotBestFit(weights):
+
+    dataMat,labelMat = loadDataSet()
+    dataArr = numpy.array(dataMat)
+    #得到数据个数
+    m = numpy.shape(dataArr)[0]
+    xcord1 = [];ycord1 = []
+    xcord2 = [];ycord2 = []
+
+    for i in range(m):
+
+        if int(labelMat[i]) == 1:
+
+            #得到在类别1下x1yuy1的值
+            xcord1.append(dataArr[i,1]);ycord1.append(dataArr[i,2])
+
+        else:
+
+            #得到在类别2下x1与y1的值
+            xcord2.append(dataArr[i,1]);ycord2.append(dataArr[i,2])
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    #画散点图
+    ax.scatter(xcord1,ycord1,s = 30,c = 'red',marker = 's')
+    ax.scatter(xcord2,ycord2,s = 30,c = 'green')
+    x = numpy.arange(-3.0,3.0,0.1)
+    #0=x0*w0+x1*w1+x2*w2得到如下拟合直线
+    y = (-weights[0] - weights[1]*x) / weights[2]
+    ax.plot(x,y)
+    plt.xlabel('X1')
+    plt.ylabel('X2')
+    plt.show()
+
+
+plotBestFit(a.getA())
+
+
+#随机梯度上升算法
+#通过随机选取一个数据来更新回归系数
+def stoGradAscent(dataMatrix,classLabel,numIter = 150):
+
+    m,n = numpy.shape(dataMatrix)
+    #初始化回归系数为1
+    weights = numpy.ones(n)
+
+    for j in range(numIter):
+
+        dataIndex = range(m)
+
+        for i in range(m):
+
+            #每次迭代得到新的步长
+            alpha = 4 / (1.0 + i + j) + 0.01
+            #得到一个随机数
+            randIndex = int(random.uniform(0,len(dataIndex)))
+            #得到预测类别
+            h = sigmoid(sum(dataMatrix[randIndex] * weights))
+            #得到真实类别与预测类别的差值
+            error = classLabel[randIndex] - h
+            #更新回归系数
+            weights = weights + alpha * error * dataMatrix[randIndex]
+            del(dataIndex[randIndex])
+
+    return weights
+
+
+#通过logistic回归进行分类
+def classifyVector(inX,weights):
+
+    #sigmoid的输入为x0*w0+x1*w1+x2*w2+....,x0,x1..为特征值,w0,w1..为回归系数
+    prob = sigmoid(sum(inX * weights))
+
+    if prob > 0.5:
+
+        return 1
+
+    else:
+
+        return 0
+
+def colicTest():
+
+    frTrain = open(r'C:\Users\Qhy\Desktop\horseColicTraining.txt')
+    frTest = open(r'C:\Users\Qhy\Desktop\horseColicTest.txt')
+
+    trainingSet = []
+    trainingLabels = []
+
+    for line in frTrain.readlines():
+
+        currLine = line.strip().split('\t')
+        lineArr = []
+
+        for i in range(21):
+            lineArr.append(float(currLine[i]))
+
+        trainingSet.append(lineArr)
+        trainingLabels.append(currLine[21])
+
+    trainingWeights = stoGradAscent(trainingSet,trainingLabels,500)
+    errorCount = 0
+    numTestVect = 0.0
+
+    for line in frTest.readlines():
+
+        numTestVect += 1.0
+        currLine_T = line.strip().split('\t')
+        lineArr_T = []
+
+        for i in range(21):
+
+            lineArr_T.append(float(currLine_T[i]))
+
+        if int(classifyVector(numpy.array(lineArr_T),trainingWeights)) != int(currLine_T[21]):
+
+            errorCount += 1
+
+    errorRate = (float(errorCount) / numTestVect)
+    print('the error rate is:%f'%errorRate)
+
+    return errorRate
+
+def multiTest():
+
+    numTests = 10
+    errorsum = 0.0
+
+    for k in range(numTests):
+
+        errorsum += colicTest()
+
+    print('after %d iterations the average error rate is:%f'%(numTests,errorsum/float(numTests)))
