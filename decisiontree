@@ -1,0 +1,170 @@
+#决策树算法所需要的数据集是一个嵌套的列表，并且要有相应的类别对应的列表
+
+
+#ID3
+#决策树分类算法
+
+
+from numpy import log2
+
+
+#原始数据集
+dataset = [
+    [1,1,'yes'],
+    [1,1,'yes'],
+    [1,0,'no'],
+    [0,1,'no'],
+    [0,1,'no']
+]
+
+
+#属性标签
+labels = ['no surfacing','flippers']
+
+
+#得到数据集或者数据子集的熵
+def calcShannonEnt(dataset):
+
+    #原始数据集长度
+    number = len(dataset)
+    #创建一个空字典
+    dict = {}
+
+    for value in dataset:
+
+        #得到每一组数据的类属性
+        featvalue = value[-1]
+
+        #如果类属性不是字典的键，则创建该属性名的键并赋值为0
+        if featvalue not in dict.keys():
+            dict[featvalue] = 0
+        #属性出现一次值+1
+        dict[featvalue] += 1
+
+    shannon = 0
+
+    for key in dict.keys():
+
+        #求出每个类属性在数据中出现的概率
+        prob = float(dict[key] / number)
+        #通过公式得出熵
+        shannon -= prob*log2(prob)
+
+    return shannon
+
+
+#划分子集
+def splitDataset(dataset,axis,value):
+
+    retdata = []
+
+    for feat in dataset:
+
+        #找出某一属性下相同的类的集合
+        if feat[axis] == value:
+
+            #去除每组符合条件的子组中该属性的值
+            featvalue = feat[:axis]
+            reducedata = feat[axis+1:]
+            featvalue.extend(reducedata)
+            #将去除后剩余的数组重新保存为原数据集的格式
+            retdata.append(featvalue)
+
+    return retdata
+
+
+#得到信息增益最大的属性或特征
+def chooseBestFeatureToSplit(dataset):
+
+    #得到数据集属性个数
+    number = len(dataset[0]) - 1
+    #得到原数据集的熵
+    baseshannon = calcShannonEnt(dataset)
+    bestInfo = 0
+    bestFeature = -1
+
+    for i in range(number):
+
+        #得到某一属性下的类的集合
+        featList = [example[i] for example in dataset]
+        #通过元组去除相同的值，剩下的即为该属性下类的集合
+        uniqueVals = set(featList)
+        newEntropy = 0.0
+        #得到某属性分组后每一组的熵的和
+
+        for value in uniqueVals:
+
+            subdata = splitDataset(dataset,i,value)
+            num_splitdata = len(subdata)
+            num_original_data = len(dataset)
+            #得到该类在该属性中的比例
+            prob = num_splitdata / num_original_data
+            newEntropy += prob * calcShannonEnt(subdata)
+
+        #得到某一属性的信息增益
+        infoGain = baseshannon - newEntropy
+
+        #找出信息增益最大的属性，即为分解的最佳属性
+        if infoGain > bestInfo:
+
+            bestInfo = infoGain
+            bestFeature = i
+
+    return bestFeature
+
+
+#得到出现次数最多的分类名称
+def majorityCnt(classList):
+
+    number = 0
+    classCount = {}
+
+    for vote in classList:
+
+        if vote not in classCount.keys():
+
+            classCount[vote] = 0
+
+        classCount[vote] +=1
+
+    for key in classCount.keys():
+
+        value = classCount[key]
+
+        if value > number:
+
+            number = value
+            majorityname = key
+
+    return majorityname
+
+
+#递归构造决策树
+def createTree(dataset,labels):
+
+    #找出数据集中的类别
+    classList = [example[-1]  for example in dataset]
+
+    #如果所有的类别都相同，停止继续划分
+    if classList.count(classList[0]) == len(classList):
+        return classList[0]
+
+    #遍历完，返回次数最多的类别
+    if len(dataset[0]) == 1:
+        return majorityCnt(classList)
+
+    #得到信息增益最大的属性
+    bestFeat = chooseBestFeatureToSplit(dataset)
+    bestFeatLabel = labels[bestFeat]
+    mytree = {bestFeatLabel:{}}
+    del(labels[bestFeat])
+    #得到该属性下的分类
+    featValues = [example[bestFeat] for example in dataset]
+    uniqueVals = set(featValues)
+
+    for value in uniqueVals:
+
+        subLabels = labels[:]
+        mytree[bestFeatLabel][value] = createTree(splitDataset(dataset,bestFeat,value),subLabels)
+
+    return mytree
