@@ -1,0 +1,43 @@
+rom numpy import *
+from treeRegression.cart import *
+
+#标准回归得到回归系数
+def linearSolve(dataSet):
+
+    m,n = shape(dataSet)
+    X = mat(ones((m,n)))
+    Y = mat(ones((m,1)))
+    X[:,1:n] = dataSet[:,0:n-1]
+    Y = dataSet[:,-1]
+
+    xTx = X.T * X
+    if linalg.det(xTx) == 0.0:
+        return
+
+    ws = xTx.I * (X.T * Y)
+
+    return ws,X,Y
+
+
+#用回归系数作为叶子节点
+def modelLeaf(dataSet):
+
+    ws,X,Y = linearSolve(dataSet)
+
+    return ws
+
+
+#用实际值减去预测值求平方和得到误差
+def modelErr(dataSet):
+
+    ws,X,Y = linearSolve(dataSet)
+    yHat = X * ws
+
+    return sum(power(Y-yHat,2))
+
+
+filename = r'C:\Users\Qhy\Desktop\exp2.txt'
+mydata1 = mat(loadDataSet(filename))
+#创建树，此时叶子节点为回归系数
+myTree1 = createTree(mydata1,modelLeaf,modelErr,ops=(1,10))
+print(myTree1)
